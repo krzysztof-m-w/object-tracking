@@ -359,6 +359,8 @@ def write_chessboard_detection(video, contours, filename):
         (width, height),
     )
 
+    contours_for_frames = list()
+
     while video.isOpened():
         ret, frame = video.read()
 
@@ -366,8 +368,12 @@ def write_chessboard_detection(video, contours, filename):
             cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
             writer.write(frame)
 
+            contours_for_frames.append(contours)
+
         else:
             break
+
+    save_contour_parameters(contours_for_frames, filename)
 
 def draw_bbox(frame, bbox, color=(255, 255, 255)):
     p1 = (int(bbox[0]), int(bbox[1]))
@@ -375,7 +381,8 @@ def draw_bbox(frame, bbox, color=(255, 255, 255)):
     cv2.rectangle(frame, p1, p2, color, 2, 1)
 
 
-def write_and_detect_chessboard(video, contours, filename, maxCorners=4500, qualityLevel=0.01):
+def write_and_detect_chessboard(video, contours, filename):
+    # find bottom-left and top-right corner
     points_array = np.array(contours)
     points_array = points_array.reshape(-1, 2)
     sum_diagonal = np.sum(points_array, axis=1)
@@ -390,11 +397,17 @@ def write_and_detect_chessboard(video, contours, filename, maxCorners=4500, qual
     video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 
+    #create tracker for the chessboard
+
     tracker = cv2.TrackerMIL_create()
     bbox = (point1[0], point1[1], point2[0] - point1[0], point2[1] - point1[1])
 
     if tracker.init(frame, bbox):
         print("MIL tracker initialized at bounding box:", bbox)
+
+
+
+    #initialize writer
 
     width = int(video.get(3))
     height = int(video.get(4))
@@ -408,6 +421,37 @@ def write_and_detect_chessboard(video, contours, filename, maxCorners=4500, qual
         (width, height),
     )
 
+
+    video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    contours_series = list()
+
+    while video.isOpened():
+        ret, frame = video.read()
+        new_contours = list()
+
+        if ret:
+            ok, bbox = tracker.update(frame)
+            if ok:
+                shift = point1 - bbox[:2]
+                for i, _ in enumerate(contours):
+                    new_contours.append(contours[i] - shift)
+                
+                contours_series.append(new_contours)
+                cv2.drawContours(frame, new_contours, -1, (0, 255, 0), 2)
+
+            writer_chessboard.write(frame)
+        else:
+            break
+
+    save_contour_parameters(contours_series, filename)
+    writer_chessboard.release()
+
+def write_figure_detection(video, contours_series, filename, maxCorners=4500, qualityLevel=0.01):
+    width = int(video.get(3))
+    height = int(video.get(4))
+
+    fps = video.get(cv2.CAP_PROP_FPS)
+
     writer_figures = cv2.VideoWriter(
         f"figure_detection/{filename}.mp4",  # Updated filename
         cv2.VideoWriter_fourcc(*"mp4v"),  # Codec for MP4 format (codec might vary)
@@ -415,46 +459,33 @@ def write_and_detect_chessboard(video, contours, filename, maxCorners=4500, qual
         (width, height),
     )
 
-
-    video.set(cv2.CAP_PROP_POS_FRAMES, 0)
-
+    i = 0
     points_in_squares = list()
 
     while video.isOpened():
         ret, frame = video.read()
-        new_contours = list()
+        contours = contours_series[i]
+        i += 1
 
         if ret:
-            frame2 = frame.copy()
-            ok, bbox = tracker.update(frame)
-            if ok:
-                shift = point1 - bbox[:2]
-                for i, _ in enumerate(contours):
-                    new_contours.append(contours[i] - shift)
-                
+            
                     
-                cv2.drawContours(frame, new_contours, -1, (0, 255, 0), 2)
+            cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
 
-                p2, square_count = find_figures(frame, new_contours, maxCorners, qualityLevel)
+            p2, square_count = find_figures(frame, contours, maxCorners, qualityLevel)
 
-                for new in p2:
-                    a, b = new.ravel()
-                    frame2 = cv2.circle(frame2, (int(a), int(b)), 5, (255, 255, 0), -1)
+            for new in p2:
+                a, b = new.ravel()
+                frame2 = cv2.circle(frame2, (int(a), int(b)), 5, (255, 255, 0), -1)
 
 
 
             points_in_squares.append(square_count)
-            writer_chessboard.write(frame)
             writer_figures.write(frame2)
         else:
             break
 
-    writer_chessboard.release()
     writer_figures.release()
-
-
-
-
 
 
 def find_figures(image, contours, maxCorners=4500, qualityLevel=0.01):
@@ -482,3 +513,9 @@ def find_figures(image, contours, maxCorners=4500, qualityLevel=0.01):
 
     return p2, square_count
 
+def save_contour_parameters(parameters, path):
+    np.save(f'contour_parameters/{path}.npy', parameters)
+
+def load_contour_parameters(path):
+    loaded_data = np.load(f'contour_parameters/{path}.npy')
+    return loaded_data
