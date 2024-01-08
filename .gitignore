@@ -2,3 +2,5 @@ recordings/
 chessboard_detection/
 __pycache__/
 test/
+foreground_detection/
+cut_videos/
