@@ -4,3 +4,4 @@ __pycache__/
 test/
 foreground_detection/
 cut_videos/
+circles_detected/
